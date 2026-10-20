@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>d20 Tabletop Dice Roller</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @keyframes critGlow { 0%,100%{box-shadow:0 0 8px 4px #fbbf24;} 50%{box-shadow:0 0 24px 12px #f59e0b, 0 0 40px 20px #fde68a;} }
+  .crit-flash { animation: critGlow 1s ease-in-out 3; background: #fbbf24 !important; color: #1a1a00 !important; }
+  .die-btn { min-width: 56px; padding: 10px 0; font-weight:700; font-size:1rem; border-radius:8px; cursor:pointer; transition:transform 0.1s,opacity 0.1s; }
+  .die-btn:active { transform:scale(0.92); }
+</style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center p-4">
+<h1 class="text-3xl font-bold mt-2 mb-4">d20 Tabletop Dice Roller</h1>
+
+<!-- Quick dice -->
+<div class="flex flex-wrap gap-2 justify-center mb-4">
+  <button onclick="quickRoll(4)"  class="die-btn bg-purple-700 hover:bg-purple-600" aria-label="Roll d4">d4</button>
+  <button onclick="quickRoll(6)"  class="die-btn bg-blue-700 hover:bg-blue-600"   aria-label="Roll d6">d6</button>
+  <button onclick="quickRoll(8)"  class="die-btn bg-cyan-700 hover:bg-cyan-600"   aria-label="Roll d8">d8</button>
+  <button onclick="quickRoll(10)" class="die-btn bg-teal-700 hover:bg-teal-600"   aria-label="Roll d10">d10</button>
+  <button onclick="quickRoll(12)" class="die-btn bg-green-700 hover:bg-green-600" aria-label="Roll d12">d12</button>
+  <button onclick="quickRoll(20)" id="d20Btn" class="die-btn bg-red-700 hover:bg-red-600" aria-label="Roll d20">d20</button>
+  <button onclick="quickRoll(100)"class="die-btn bg-orange-700 hover:bg-orange-600" aria-label="Roll d100">d100</button>
+</div>
+
+<!-- Advantage/Disadvantage -->
+<div class="flex gap-3 mb-4 items-center">
+  <span class="font-semibold text-sm">d20 mode:</span>
+  <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="advMode" value="normal" checked onchange="setMode('normal')"> Normal</label>
+  <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="advMode" value="adv" onchange="setMode('adv')"> Advantage</label>
+  <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="advMode" value="dis" onchange="setMode('dis')"> Disadvantage</label>
+</div>
+
+<!-- Expression input -->
+<div class="flex gap-2 mb-4 w-full max-w-sm">
+  <label for="expr" class="sr-only">Dice expression</label>
+  <input id="expr" type="text" placeholder='e.g. 3d6+2 or 2d8-1' value="3d6+2"
+    class="flex-1 px-3 py-2 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-400"
+    aria-label="Dice expression" />
+  <button onclick="rollExpr()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold">Roll!</button>
+</div>
+
+<!-- Result display -->
+<div id="result" class="text-center mb-4 bg-gray-800 rounded-xl p-4 w-full max-w-sm min-h-[80px] flex flex-col justify-center">
+  <div id="resultIndividual" class="text-sm text-gray-300 mb-1"></div>
+  <div id="resultTotal" class="text-4xl font-bold"></div>
+  <div id="resultLabel" class="text-sm text-yellow-400 mt-1"></div>
+</div>
+
+<!-- History -->
+<div class="w-full max-w-sm">
+  <div class="flex justify-between items-center mb-1">
+    <h2 class="font-semibold">Roll History</h2>
+    <button onclick="clearHistory()" class="text-xs text-gray-400 hover:text-white">Clear</button>
+  </div>
+  <ul id="history" class="bg-gray-800 rounded-lg divide-y divide-gray-700 max-h-64 overflow-y-auto" aria-live="polite" aria-label="Roll history"></ul>
+</div>
+
+<script>
+let rollHistory=[], advMode='normal';
+
+function setMode(m){advMode=m;}
+
+function rand(n){return Math.floor(Math.random()*n)+1;}
+
+function parseExpr(str) {
+  str=str.trim().toLowerCase();
+  const m=str.match(/^(\d+)d(\d+)([+-]\d+)?$/);
+  if(!m) return null;
+  return {count:parseInt(m[1]),sides:parseInt(m[2]),mod:parseInt(m[3]||'0')};
+}
+
+function quickRoll(sides) {
+  let rolls=[], label='';
+  if(sides===20 && advMode!=='normal'){
+    const r1=rand(20), r2=rand(20);
+    if(advMode==='adv'){rolls=[Math.max(r1,r2)];label=`Advantage (rolled ${r1} & ${r2})`;}
+    else{rolls=[Math.min(r1,r2)];label=`Disadvantage (rolled ${r1} & ${r2})`;}
+  } else {
+    rolls=[rand(sides)];
+    label=sides===20&&rolls[0]===20?'CRITICAL HIT!':sides===20&&rolls[0]===1?'Critical Miss':'';
+  }
+  const total=rolls.reduce((a,b)=>a+b,0);
+  showResult(`1d${sides}`, rolls, total, 0, label, sides===20&&rolls[0]===20);
+}
+
+function rollExpr() {
+  const str=document.getElementById('expr').value;
+  const p=parseExpr(str);
+  if(!p){showError('Invalid expression. Use format: 2d6+3');return;}
+  if(p.count<1||p.count>100||p.sides<2||p.sides>1000){showError('Out of range (1-100 dice, 2-1000 sides)');return;}
+  const rolls=Array.from({length:p.count},()=>rand(p.sides));
+  const total=rolls.reduce((a,b)=>a+b,0)+p.mod;
+  const isCrit=p.sides===20&&p.count===1&&rolls[0]===20;
+  showResult(str,rolls,total,p.mod,'',isCrit);
+}
+
+function showResult(expr, rolls, total, mod, label, isCrit) {
+  const ri=document.getElementById('resultIndividual');
+  const rt=document.getElementById('resultTotal');
+  const rl=document.getElementById('resultLabel');
+  ri.textContent = rolls.length>1 ? `Rolls: [${rolls.join(', ')}]${mod!==0?(mod>0?` +${mod}`:` ${mod}`):''}` : '';
+  rt.textContent = total;
+  if(isCrit){
+    rt.classList.add('crit-flash');
+    rl.textContent='⭐ CRITICAL HIT! ⭐';
+    setTimeout(()=>rt.classList.remove('crit-flash'),3100);
+  } else {
+    rt.classList.remove('crit-flash');
+    rl.textContent=label;
+  }
+  addHistory(expr,rolls,total,isCrit);
+}
+
+function showError(msg){
+  document.getElementById('resultTotal').textContent='';
+  document.getElementById('resultIndividual').textContent='';
+  document.getElementById('resultLabel').textContent='⚠ '+msg;
+}
+
+function addHistory(expr, rolls, total, isCrit) {
+  rollHistory.unshift({expr,rolls,total,isCrit,ts:new Date().toLocaleTimeString()});
+  if(rollHistory.length>20) rollHistory.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const ul=document.getElementById('history');
+  ul.innerHTML=rollHistory.map(h=>{
+    const star=h.isCrit?' ⭐':'';
+    const ind=h.rolls.length>1?` [${h.rolls.join(',')}]`:'';
+    return `<li class="px-3 py-2 text-sm flex justify-between"><span class="font-mono">${escHtml(h.expr)}${ind}</span><span class="font-bold${h.isCrit?' text-yellow-400':''}">${h.total}${star}</span></li>`;
+  }).join('');
+}
+
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function clearHistory(){rollHistory=[];renderHistory();}
+</script>
+</body>
+</html>
